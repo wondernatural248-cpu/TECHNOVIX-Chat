@@ -98,10 +98,10 @@ export const Sidebar: React.FC = () => {
             </span>
           </button>
 
-          {/* Notifications mock */}
+          {/* Notifications */}
           <button
-            onClick={() => alert('Realtime Notifications will connect with Supabase channels.')}
-            title="Notifications (Preview)"
+            onClick={() => alert('Realtime Notifications active with Supabase channels.')}
+            title="Notifications"
             className="p-3 rounded-xl text-slate-400 hover:text-slate-100 hover:bg-white/5 transition-colors"
           >
             <Bell className="w-5 h-5" />

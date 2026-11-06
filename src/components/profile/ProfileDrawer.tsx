@@ -147,7 +147,7 @@ export const ProfileDrawer: React.FC = () => {
           {/* Preferences & Architecture Status */}
           <div className="space-y-4 pt-2">
             <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              System Settings (UI Demo)
+              System Settings
             </h4>
 
             {/* Dark Cyber Theme */}
@@ -239,7 +239,7 @@ export const ProfileDrawer: React.FC = () => {
                 ) : isSupabaseConfigured ? (
                   <Badge variant="violet" size="xs">Awaiting Auth</Badge>
                 ) : (
-                  <Badge variant="neutral" size="xs">Demo Mode</Badge>
+                  <Badge variant="amber" size="xs">Disconnected</Badge>
                 )}
               </div>
               <p className="text-[11px] text-slate-400">
@@ -262,7 +262,7 @@ export const ProfileDrawer: React.FC = () => {
             }}
             leftIcon={<LogOut className="w-4 h-4" />}
           >
-            {isSupabaseActive ? 'Sign Out of Identity' : 'Exit Session / Sign Out'}
+            Sign Out
           </Button>
 
           <p className="text-[10px] text-center text-slate-500 font-mono">

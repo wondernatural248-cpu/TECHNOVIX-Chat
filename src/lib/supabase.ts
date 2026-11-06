@@ -22,14 +22,14 @@ export const isSupabaseConfigured = Boolean(
 export interface SupabaseConfigStatus {
   configured: boolean;
   url: string | null;
-  mode: 'connected' | 'demo-preview';
+  mode: 'connected' | 'disconnected';
   realtimeEnabled: boolean;
 }
 
 export const getSupabaseStatus = (): SupabaseConfigStatus => ({
   configured: isSupabaseConfigured,
   url: isSupabaseConfigured && rawUrl ? rawUrl : null,
-  mode: isSupabaseConfigured ? 'connected' : 'demo-preview',
+  mode: isSupabaseConfigured ? 'connected' : 'disconnected',
   realtimeEnabled: isSupabaseConfigured,
 });
 

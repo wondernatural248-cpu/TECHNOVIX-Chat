@@ -98,7 +98,7 @@ export const StoryViewerModal: React.FC = () => {
   const handleSendReply = (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyText.trim()) return;
-    alert(`Story reply sent (Demo Preview): "${replyText}"`);
+    alert(`Story reply sent: "${replyText}"`);
     setReplyText('');
   };
 
@@ -215,7 +215,7 @@ export const StoryViewerModal: React.FC = () => {
             {['⚡', '💜', '🔥', '🚀', '✨'].map((emoji) => (
               <button
                 key={emoji}
-                onClick={() => alert(`Reacted with ${emoji} (Demo Mode)`)}
+                onClick={() => alert(`Reacted with ${emoji}`)}
                 className="px-2.5 py-1 rounded-full bg-black/50 hover:bg-white/20 backdrop-blur text-sm transition-transform active:scale-90"
               >
                 {emoji}

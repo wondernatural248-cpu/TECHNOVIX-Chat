@@ -1,15 +1,15 @@
 import React, { useRef, useState } from 'react';
 import {
+  AlertCircle,
   CheckCircle2,
-  Code,
   FileCode,
   Image as ImageIcon,
+  Loader2,
   Mic,
   Paperclip,
   Send,
   Smile,
   X,
-  Zap,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Attachment } from '../../types/chat';
@@ -26,21 +26,34 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ conversationId
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSend = async () => {
-    if (!content.trim() && attachments.length === 0) return;
+    if ((!content.trim() && attachments.length === 0) || isSending) return;
     const msgToSend = content;
-    const attsToSend = attachments;
+    const attsToSend = [...attachments];
 
-    setContent('');
-    setAttachments([]);
-    setShowEmojiPicker(false);
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
+    setIsSending(true);
+    setSendError(null);
+
+    try {
+      await sendMessage(conversationId, msgToSend, attsToSend);
+      setContent('');
+      setAttachments([]);
+      setShowEmojiPicker(false);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to send message to Supabase';
+      setSendError(message);
+    } finally {
+      setIsSending(false);
     }
-
-    await sendMessage(conversationId, msgToSend, attsToSend);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -50,26 +63,28 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ conversationId
     }
   };
 
-  const handleAttachDemoFile = (type: 'image' | 'code') => {
-    if (type === 'image') {
-      const mockImg: Attachment = {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isImage = file.type.startsWith('image/');
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    const isCode = ['ts', 'tsx', 'js', 'jsx', 'json', 'py', 'html', 'css', 'sql', 'sh', 'md'].includes(ext || '');
+    const attType: 'image' | 'code' | 'document' = isImage ? 'image' : isCode ? 'code' : 'document';
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const newAtt: Attachment = {
         id: `att_${Date.now()}`,
-        name: 'neural-topology-render.png',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=500&auto=format&fit=crop&q=80',
-        size: '1.4 MB',
+        name: file.name,
+        type: attType,
+        url: reader.result as string,
+        size: `${(file.size / 1024).toFixed(1)} KB`,
       };
-      setAttachments((prev) => [...prev, mockImg]);
-    } else {
-      const mockCode: Attachment = {
-        id: `att_${Date.now()}`,
-        name: 'schema-validation.ts',
-        type: 'code',
-        url: '#',
-        size: '4.2 KB',
-      };
-      setAttachments((prev) => [...prev, mockCode]);
-    }
+      setAttachments((prev) => [...prev, newAtt]);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleAddEmoji = (emoji: string) => {
@@ -92,6 +107,15 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ conversationId
 
   return (
     <div className="p-3 sm:p-4 bg-technovix-void/90 border-t border-white/10 backdrop-blur-xl relative">
+      {/* Hidden File Input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept="image/*,.ts,.tsx,.js,.jsx,.json,.txt,.md,.pdf,.csv"
+        onChange={handleFileChange}
+      />
+
       {/* Attachments preview list */}
       {attachments.length > 0 && (
         <div className="mb-2 flex items-center gap-2 overflow-x-auto pb-1">
@@ -107,6 +131,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ conversationId
               )}
               <span className="truncate max-w-[120px]">{att.name}</span>
               <button
+                type="button"
                 onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== att.id))}
                 className="text-slate-400 hover:text-white"
               >
@@ -117,12 +142,30 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ conversationId
         </div>
       )}
 
+      {/* Send Error Notice */}
+      {sendError && (
+        <div className="mb-2 p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-300 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            <span>{sendError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSendError(null)}
+            className="text-rose-400 hover:text-white"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Emoji Picker Popup */}
       {showEmojiPicker && (
         <div className="absolute bottom-full mb-2 left-4 z-30 p-2.5 rounded-2xl bg-technovix-card border border-white/15 shadow-glass backdrop-blur-xl flex items-center gap-2">
           {QUICK_EMOJIS.map((emoji) => (
             <button
               key={emoji}
+              type="button"
               onClick={() => handleAddEmoji(emoji)}
               className="text-xl p-1 hover:scale-125 transition-transform"
             >
@@ -136,33 +179,14 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ conversationId
       <div className="flex items-end gap-2 bg-technovix-panel/90 rounded-2xl border border-white/10 p-2 focus-within:border-neon-cyan/50 focus-within:ring-1 focus-within:ring-neon-cyan/30 transition-all shadow-glass">
         {/* Left actions: Attachments & Emoji */}
         <div className="flex items-center gap-1 shrink-0 pb-1 pl-1">
-          <div className="relative group">
-            <button
-              type="button"
-              className="p-1.5 rounded-xl text-slate-400 hover:text-neon-cyan hover:bg-white/5 transition-colors cursor-pointer"
-              title="Attach media or code file"
-            >
-              <Paperclip className="w-4 h-4" />
-            </button>
-
-            {/* Attach dropdown mock */}
-            <div className="absolute bottom-full mb-1 left-0 hidden group-hover:flex flex-col gap-1 p-1 bg-technovix-panel border border-white/15 rounded-xl shadow-glass z-20 min-w-[140px]">
-              <button
-                type="button"
-                onClick={() => handleAttachDemoFile('image')}
-                className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-white/5"
-              >
-                <ImageIcon className="w-3.5 h-3.5 text-neon-cyan" /> Attach Image
-              </button>
-              <button
-                type="button"
-                onClick={() => handleAttachDemoFile('code')}
-                className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-white/5"
-              >
-                <Code className="w-3.5 h-3.5 text-neon-violet-light" /> Share Code File
-              </button>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="p-1.5 rounded-xl text-slate-400 hover:text-neon-cyan hover:bg-white/5 transition-colors cursor-pointer"
+            title="Attach file or image"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
 
           <button
             type="button"
@@ -185,7 +209,6 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ conversationId
             value={content}
             onChange={(e) => {
               setContent(e.target.value);
-              // auto resize
               e.target.style.height = 'auto';
               e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
             }}
@@ -210,7 +233,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ conversationId
                 ? 'bg-rose-500 text-white animate-pulse shadow-[0_0_12px_rgba(244,63,94,0.8)]'
                 : 'text-slate-400 hover:text-neon-violet-light hover:bg-white/5'
             }`}
-            title={isRecording ? 'Recording...' : 'Record voice memo (mock)'}
+            title={isRecording ? 'Recording...' : 'Record voice memo'}
           >
             <Mic className="w-4 h-4" />
           </button>
@@ -218,33 +241,39 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ conversationId
           <button
             type="button"
             onClick={handleSend}
-            disabled={!content.trim() && attachments.length === 0}
+            disabled={(!content.trim() && attachments.length === 0) || isSending}
             className={`p-2 rounded-xl transition-all ${
-              content.trim() || attachments.length > 0
+              (content.trim() || attachments.length > 0) && !isSending
                 ? 'bg-neon-cyan text-technovix-void shadow-glow-cyan-sm hover:brightness-110 active:scale-95 cursor-pointer'
                 : 'bg-white/5 text-slate-600 cursor-not-allowed'
             }`}
             title="Send Message"
           >
-            <Send className="w-4 h-4" />
+            {isSending ? (
+              <Loader2 className="w-4 h-4 animate-spin text-technovix-void" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
           </button>
         </div>
       </div>
 
-      {/* Connection status sub-notice */}
+      {/* Connection status notice */}
       <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500 px-1">
-        <span className="flex items-center gap-1">
+        <span className="flex items-center gap-1.5">
           {isSupabaseActive ? (
             <>
               <CheckCircle2 className="w-3 h-3 text-emerald-400" />
               <span className="text-slate-400">
-                Connected to Supabase Realtime • Messages broadcast instantaneously
+                Connected to Supabase Realtime • Messages broadcast via PostgreSQL
               </span>
             </>
           ) : (
             <>
-              <Zap className="w-3 h-3 text-neon-cyan" />
-              <span>Interactive Demo: Sent messages update conversation preview in-memory</span>
+              <AlertCircle className="w-3 h-3 text-amber-400" />
+              <span className="text-amber-400/90 font-mono">
+                Supabase Disconnected: Configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to transmit messages
+              </span>
             </>
           )}
         </span>

@@ -1,10 +1,10 @@
 import React from 'react';
-import { Database, LogOut, Sparkles, Terminal, User } from 'lucide-react';
+import { Database, LogOut, Terminal, User } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Badge } from '../common/Badge';
 
 export const AppHeader: React.FC = () => {
-  const { setActiveScreen, setIsProfileOpen, activeView } = useApp();
+  const { signOut, setIsProfileOpen, activeView, isSupabaseActive } = useApp();
 
   return (
     <header className="h-14 border-b border-white/10 bg-technovix-void/80 px-4 flex items-center justify-between shrink-0 select-none backdrop-blur-xl z-10">
@@ -26,7 +26,7 @@ export const AppHeader: React.FC = () => {
         </div>
 
         <Badge variant={activeView === 'arcade' ? 'violet' : 'cyan'} size="xs" className="hidden sm:inline-flex">
-          {activeView === 'arcade' ? 'CYBER DRIFT' : 'v1.0-PREVIEW'}
+          {activeView === 'arcade' ? 'CYBER DRIFT' : 'LIVE'}
         </Badge>
       </div>
 
@@ -35,17 +35,26 @@ export const AppHeader: React.FC = () => {
           <Database className="w-3.5 h-3.5 text-neon-cyan" />
           <span>
             {activeView === 'arcade'
-              ? 'Flagship 2.5D Cyberpunk Arcade Racer • 60 FPS'
-              : 'PostgreSQL & Supabase Real-Time Architecture Prepared'}
+              ? 'Real-Time 3D Cyberpunk Arcade Racer • 60 FPS'
+              : isSupabaseActive
+              ? 'PostgreSQL & Supabase Realtime Active'
+              : 'Supabase Disconnected • Check .env.local'}
           </span>
         </div>
       </div>
 
       <div className="flex items-center gap-2">
-        <Badge variant="demo" size="xs">
-          <Sparkles className="w-3 h-3 text-neon-cyan" />
-          UI PREVIEW MODE
-        </Badge>
+        {isSupabaseActive ? (
+          <Badge variant="emerald" size="xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            SUPABASE LIVE
+          </Badge>
+        ) : (
+          <Badge variant="amber" size="xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            OFFLINE
+          </Badge>
+        )}
 
         <button
           onClick={() => setIsProfileOpen(true)}
@@ -56,8 +65,8 @@ export const AppHeader: React.FC = () => {
         </button>
 
         <button
-          onClick={() => setActiveScreen('welcome')}
-          title="Return to Welcome / Sign-in"
+          onClick={() => signOut()}
+          title="Sign Out"
           className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
         >
           <LogOut className="w-4 h-4" />

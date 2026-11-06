@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertCircle, ArrowRight, CheckCircle2, Database, Lock, Mail, Play, Sparkles } from 'lucide-react';
+import { AlertCircle, ArrowRight, CheckCircle2, Database, Lock, Mail, Sparkles } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { AuthLayout } from './AuthLayout';
 import { Button } from '../common/Button';
@@ -16,30 +16,22 @@ export const SignInScreen: React.FC = () => {
     e.preventDefault();
     setErrorMessage(null);
 
+    if (!isSupabaseConfigured) {
+      setErrorMessage('Supabase backend is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env.local file.');
+      return;
+    }
+
     if (!email.trim() || !password) {
       setErrorMessage('Please enter both your email address and password.');
       return;
     }
 
-    if (isSupabaseConfigured) {
-      setIsLoading(true);
-      const res = await signInWithEmail(email, password);
-      setIsLoading(false);
-      if (res.error) {
-        setErrorMessage(res.error);
-      }
-    } else {
-      // Demo preview launch
-      setIsLoading(true);
-      setTimeout(() => {
-        setIsLoading(false);
-        setActiveScreen('app');
-      }, 500);
+    setIsLoading(true);
+    const res = await signInWithEmail(email, password);
+    setIsLoading(false);
+    if (res.error) {
+      setErrorMessage(res.error);
     }
-  };
-
-  const handleInstantDemo = () => {
-    setActiveScreen('app');
   };
 
   return (
@@ -55,11 +47,11 @@ export const SignInScreen: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="bg-technovix-void/80 border border-neon-cyan/20 rounded-2xl p-3 text-xs text-slate-300 flex items-start gap-2.5">
-            <Database className="w-4 h-4 text-neon-cyan shrink-0 mt-0.5" />
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3 text-xs text-slate-300 flex items-start gap-2.5">
+            <Database className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <span className="font-semibold text-neon-cyan">Supabase Setup Notice:</span>{' '}
-              Add your credentials to <span className="font-mono text-neon-violet-light">.env.local</span> to activate multi-user live messaging. Or explore right now via Instant Demo Preview!
+              <span className="font-semibold text-amber-400">Supabase Setup Required:</span>{' '}
+              Add your Supabase project URL and anon public key to <span className="font-mono text-neon-violet-light">.env.local</span> to sign in.
             </div>
           </div>
         )}
@@ -96,7 +88,7 @@ export const SignInScreen: React.FC = () => {
           />
         </div>
 
-        <div className="pt-2 space-y-3">
+        <div className="pt-2">
           <Button
             type="submit"
             variant="primary"
@@ -104,17 +96,7 @@ export const SignInScreen: React.FC = () => {
             isLoading={isLoading}
             rightIcon={<ArrowRight className="w-4 h-4" />}
           >
-            {isSupabaseConfigured ? 'Authenticate & Sign In' : 'Sign In / Preview'}
-          </Button>
-
-          <Button
-            type="button"
-            variant="cyber"
-            className="w-full"
-            onClick={handleInstantDemo}
-            leftIcon={<Play className="w-4 h-4 fill-current" />}
-          >
-            Instant Demo Preview
+            Authenticate & Sign In
           </Button>
         </div>
 

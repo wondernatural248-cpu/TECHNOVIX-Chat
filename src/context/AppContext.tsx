@@ -11,14 +11,18 @@ import {
   Story,
   UserProfile,
 } from '../types/chat';
-import {
-  currentUser as initialCurrentUser,
-  sampleConversations,
-  sampleMessages,
-  sampleStories,
-} from '../data/mockData';
+import { initialStories } from '../data/stories';
 
 const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80';
+
+const defaultEmptyUser: UserProfile = {
+  id: '',
+  username: '',
+  displayName: '',
+  avatar: DEFAULT_AVATAR,
+  bio: '',
+  status: 'offline',
+};
 
 const formatMessageTime = (isoString?: string): string => {
   if (!isoString) return 'Just now';
@@ -127,15 +131,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>('welcome');
   const [activeView, setActiveView] = useState<AppView>('chat');
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [conversations, setConversations] = useState<Conversation[]>(sampleConversations);
-  const [messages, setMessages] = useState<Record<string, Message[]>>(sampleMessages);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [activeStoryId, setActiveStoryId] = useState<string | null>(null);
   const [isProfileOpen, setIsProfileOpen] = useState<boolean>(false);
   const [isNewChatOpen, setIsNewChatOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeFilter, setActiveFilter] = useState<ConversationFilter>('all');
-  const [currentUser, setCurrentUser] = useState<UserProfile>(initialCurrentUser);
-  const [stories, setStories] = useState<Story[]>(sampleStories);
+  const [currentUser, setCurrentUser] = useState<UserProfile>(defaultEmptyUser);
+  const [stories, setStories] = useState<Story[]>(initialStories);
   const [mobileShowChat, setMobileShowChat] = useState<boolean>(false);
 
   // Supabase state
@@ -152,10 +156,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   currentUserIdRef.current = supabaseUser?.id || null;
 
   // ----------------------------------------------------------------------------
-  // Helper: Fetch Profile for user
+  // Helper: Fetch Profile for user from Supabase PostgreSQL
   // ----------------------------------------------------------------------------
   const fetchUserProfile = useCallback(async (userId: string, email?: string): Promise<UserProfile> => {
-    if (!supabase) return initialCurrentUser;
+    if (!supabase) return defaultEmptyUser;
 
     const { data, error } = await (supabase.from('profiles') as any)
       .select('*')
@@ -163,7 +167,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .maybeSingle();
 
     if (error) {
-      console.error('Error fetching profile:', error);
+      console.error('Error fetching profile from Supabase:', error);
     }
 
     const profile = data as {
@@ -350,21 +354,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         .filter((c): c is Conversation => c !== null);
 
       setConversations(mapped);
-
-      // Auto-select first conversation if none active
-      setActiveConversationId((currentActive) => {
-        if (!currentActive && mapped.length > 0) {
-          return mapped[0].id;
-        }
-        return currentActive;
-      });
     } catch (err) {
       console.error('Error refreshing conversations:', err);
     }
   }, []);
 
   // ----------------------------------------------------------------------------
-  // Fetch Messages for Conversation
+  // Fetch Messages for Conversation from Supabase PostgreSQL
   // ----------------------------------------------------------------------------
   const fetchMessagesForConversation = useCallback(async (convId: string) => {
     if (!supabase) return;
@@ -410,13 +406,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           username: string;
           full_name: string;
           avatar_url: string | null;
-        } | null;
+        } | Array<{
+          id: string;
+          username: string;
+          full_name: string;
+          avatar_url: string | null;
+        }> | null;
       }>;
 
       const formattedMessages: Message[] = rawMsgs.map((m) => {
         const isOut = m.sender_id === uid;
-        const senderName = isOut ? 'You' : m.profiles?.full_name || m.profiles?.username || 'Peer';
-        const senderAvatar = m.profiles?.avatar_url || DEFAULT_AVATAR;
+        const senderProfile = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles;
+        const senderName = isOut ? 'You' : senderProfile?.full_name || senderProfile?.username || 'Peer';
+        const senderAvatar = senderProfile?.avatar_url || DEFAULT_AVATAR;
 
         return {
           id: m.id,
@@ -451,7 +453,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [isSupabaseActive, activeConversationId, fetchMessagesForConversation]);
 
   // ----------------------------------------------------------------------------
-  // Realtime WebSocket Subscription
+  // Realtime WebSocket Subscription (Supabase Realtime)
   // ----------------------------------------------------------------------------
   useEffect(() => {
     const client = supabase;
@@ -522,8 +524,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
 
           // Update conversation lastMessage & lastMessageTime
-          setConversations((prev) =>
-            prev.map((c) =>
+          setConversations((prev) => {
+            const exists = prev.some((c) => c.id === convId);
+            if (!exists) {
+              refreshConversations();
+              return prev;
+            }
+            return prev.map((c) =>
               c.id === convId
                 ? {
                     ...c,
@@ -531,8 +538,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     lastMessageTime: 'Just now',
                   }
                 : c
-            )
-          );
+            );
+          });
         }
       )
       .on(
@@ -541,6 +548,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           event: '*',
           schema: 'public',
           table: 'conversations',
+        },
+        () => {
+          refreshConversations();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversation_participants',
         },
         () => {
           refreshConversations();
@@ -601,10 +619,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else if (event === 'SIGNED_OUT') {
         setSupabaseSession(null);
         setSupabaseUser(null);
-        setCurrentUser(initialCurrentUser);
-        setConversations(sampleConversations);
-        setMessages(sampleMessages);
-        setActiveConversationId('conv_1');
+        setCurrentUser(defaultEmptyUser);
+        setConversations([]);
+        setMessages({});
+        setActiveConversationId(null);
         setActiveScreen('welcome');
       }
     });
@@ -616,11 +634,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [fetchUserProfile, refreshConversations]);
 
   // ----------------------------------------------------------------------------
-  // Actions: Sign In, Sign Up, Sign Out
+  // Actions: Sign In, Sign Up, Sign Out (Real Supabase Auth Only)
   // ----------------------------------------------------------------------------
   const signInWithEmail = async (email: string, password: string): Promise<{ error: string | null }> => {
-    if (!supabase) {
-      return { error: 'Supabase client is not configured. Check .env.local.' };
+    if (!supabase || !isSupabaseConfigured) {
+      return { error: 'Supabase backend is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env.local file.' };
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -651,8 +669,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     username: string,
     avatarUrl?: string
   ): Promise<{ error: string | null; needsEmailConfirmation?: boolean }> => {
-    if (!supabase) {
-      return { error: 'Supabase client is not configured. Check .env.local.' };
+    if (!supabase || !isSupabaseConfigured) {
+      return { error: 'Supabase backend is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env.local file.' };
     }
 
     const cleanUsername = username.trim() || displayName.toLowerCase().replace(/[^a-z0-9]/g, '_');
@@ -695,67 +713,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const signOut = async () => {
-    if (supabase && isSupabaseActive) {
+    if (supabase) {
       await supabase.auth.signOut();
     }
     setSupabaseSession(null);
     setSupabaseUser(null);
-    setCurrentUser(initialCurrentUser);
-    setConversations(sampleConversations);
-    setMessages(sampleMessages);
-    setActiveConversationId('conv_1');
+    setCurrentUser(defaultEmptyUser);
+    setConversations([]);
+    setMessages({});
+    setActiveConversationId(null);
     setActiveScreen('welcome');
   };
 
   // ----------------------------------------------------------------------------
-  // Actions: User Search & Starting 1-on-1 Direct Chat
+  // Actions: User Search & Starting 1-on-1 Direct Chat (Real Supabase Only)
   // ----------------------------------------------------------------------------
   const searchUsers = useCallback(async (queryStr: string): Promise<UserProfile[]> => {
-    if (!supabase || !isSupabaseActiveRef.current) {
-      // Return demo users for preview
-      const q = queryStr.toLowerCase();
-      const mockProfiles: UserProfile[] = [
-        {
-          id: 'mock_1',
-          username: 'lyra.vance',
-          displayName: 'Lyra Vance',
-          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-          bio: 'Quantum Cryptography Architect',
-          status: 'online',
-          isVerified: true,
-        },
-        {
-          id: 'mock_2',
-          username: 'zenith.pulse',
-          displayName: 'Zenith',
-          avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-          bio: 'Mesh Security operative',
-          status: 'away',
-        },
-        {
-          id: 'mock_3',
-          username: 'kael.solis',
-          displayName: 'Kael Solis',
-          avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
-          bio: 'Cyber Drift Champion',
-          status: 'online',
-          isVerified: true,
-        },
-      ];
-      if (!q.trim()) return mockProfiles;
-      return mockProfiles.filter(
-        (u) => u.displayName.toLowerCase().includes(q) || u.username.toLowerCase().includes(q)
-      );
+    const uid = currentUserIdRef.current;
+    if (!supabase || !uid) {
+      throw new Error('You must be signed in to search registered identities.');
     }
 
-    const uid = currentUserIdRef.current;
     let req = (supabase.from('profiles') as any)
       .select('id, username, full_name, avatar_url, bio, status_indicator, is_verified')
-      .limit(20);
-
-    if (uid) {
-      req = req.neq('id', uid);
-    }
+      .neq('id', uid)
+      .limit(30);
 
     if (queryStr.trim()) {
       req = req.or(`username.ilike.%${queryStr.trim()}%,full_name.ilike.%${queryStr.trim()}%`);
@@ -764,7 +746,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const { data, error } = await req;
     if (error) {
       console.error('Search users error:', error);
-      throw new Error(error.message);
+      throw new Error(error.message || 'Failed to search users in Supabase');
     }
 
     const profiles = (data || []) as Array<{
@@ -790,24 +772,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const startDirectChat = useCallback(
     async (otherUserId: string): Promise<string> => {
-      if (!supabase || !isSupabaseActiveRef.current) {
-        // Fallback for demo mode
-        const demoConvId = `conv_demo_${Date.now()}`;
-        const newDemoConv: Conversation = {
-          id: demoConvId,
-          title: `Peer ${otherUserId.slice(0, 4)}`,
-          avatar: DEFAULT_AVATAR,
-          type: 'direct',
-          lastMessage: 'Direct encrypted channel opened',
-          lastMessageTime: 'Just now',
-          unreadCount: 0,
-          isOnline: true,
-          statusText: 'Online on mesh',
-        };
-        setConversations((prev) => [newDemoConv, ...prev]);
-        setActiveConversationId(demoConvId);
-        setMobileShowChat(true);
-        return demoConvId;
+      const uid = currentUserIdRef.current;
+      if (!supabase || !uid) {
+        throw new Error('Authentication required to start a conversation.');
       }
 
       // Call atomic RPC get_or_create_direct_conversation
@@ -817,8 +784,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
 
       if (error || !convId) {
-        console.error('Failed to get/create direct conversation:', error);
-        throw new Error(error?.message || 'Could not start conversation');
+        console.error('Failed to get/create direct conversation in Supabase:', error);
+        throw new Error(error?.message || 'Could not start conversation in Supabase');
       }
 
       const cleanConvId = String(convId);
@@ -836,7 +803,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   // ----------------------------------------------------------------------------
-  // Action: Send Message
+  // Action: Send Message (Real Supabase PostgreSQL Insert Only)
   // ----------------------------------------------------------------------------
   const sendMessage = async (
     conversationId: string,
@@ -846,30 +813,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!content.trim() && (!attachments || attachments.length === 0)) return;
 
     const trimmedContent = content.trim();
-    const now = new Date();
-    const timeFormatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+    const uid = currentUserIdRef.current;
 
-    const optimisticMessage: Message = {
-      id: tempId,
-      conversationId,
-      senderId: currentUser.id,
-      senderName: currentUser.displayName,
-      senderAvatar: currentUser.avatar,
-      content: trimmedContent,
-      timestamp: timeFormatted,
-      status: 'sending',
-      isOutgoing: true,
-      attachments,
+    if (!supabase || !uid) {
+      throw new Error('You must be signed in to Supabase to transmit messages.');
+    }
+
+    // Persist to Supabase PostgreSQL table 'messages'
+    const { data, error } = await (supabase.from('messages') as any)
+      .insert({
+        conversation_id: conversationId,
+        sender_id: uid,
+        content: trimmedContent,
+        attachments: attachments || [],
+      })
+      .select(`
+        id,
+        conversation_id,
+        sender_id,
+        content,
+        message_type,
+        attachments,
+        created_at
+      `)
+      .single();
+
+    if (error || !data) {
+      console.error('Error inserting message into Supabase:', error);
+      throw new Error(error?.message || 'Failed to transmit message to Supabase.');
+    }
+
+    const savedRow = data as {
+      id: string;
+      conversation_id: string;
+      sender_id: string;
+      content: string;
+      attachments: Attachment[];
+      created_at: string;
     };
 
-    // Optimistically append message to state
-    setMessages((prev) => ({
-      ...prev,
-      [conversationId]: [...(prev[conversationId] || []), optimisticMessage],
-    }));
+    const savedMessage: Message = {
+      id: savedRow.id,
+      conversationId: savedRow.conversation_id,
+      senderId: savedRow.sender_id,
+      senderName: currentUser.displayName || 'You',
+      senderAvatar: currentUser.avatar || DEFAULT_AVATAR,
+      content: savedRow.content,
+      timestamp: formatMessageTime(savedRow.created_at),
+      status: 'delivered',
+      isOutgoing: true,
+      attachments: (savedRow.attachments as Attachment[]) || [],
+    };
 
-    // Optimistically update conversation in list
+    // Append verified saved message to state
+    setMessages((prev) => {
+      const existing = prev[conversationId] || [];
+      if (existing.some((m) => m.id === savedRow.id)) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [conversationId]: [...existing, savedMessage],
+      };
+    });
+
+    // Update conversation lastMessage & lastMessageTime
     setConversations((prev) =>
       prev.map((c) =>
         c.id === conversationId
@@ -881,61 +889,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : c
       )
     );
-
-    // If Supabase is active, persist to PostgreSQL
-    if (isSupabaseActive && supabase) {
-      try {
-        const { data, error } = await (supabase.from('messages') as any)
-          .insert({
-            conversation_id: conversationId,
-            sender_id: currentUser.id,
-            content: trimmedContent,
-            attachments: attachments || [],
-          })
-          .select('id, created_at')
-          .single();
-
-        if (error) {
-          console.error('Error inserting message into Supabase:', error);
-          setMessages((prev) => ({
-            ...prev,
-            [conversationId]: (prev[conversationId] || []).map((m) =>
-              m.id === tempId ? { ...m, status: 'sent' } : m
-            ),
-          }));
-          return;
-        }
-
-        const realRow = data as { id: string; created_at: string };
-
-        // Replace tempId with real UUID from PostgreSQL
-        setMessages((prev) => ({
-          ...prev,
-          [conversationId]: (prev[conversationId] || []).map((m) =>
-            m.id === tempId
-              ? {
-                  ...m,
-                  id: realRow.id,
-                  status: 'delivered',
-                  timestamp: formatMessageTime(realRow.created_at),
-                }
-              : m
-          ),
-        }));
-      } catch (err) {
-        console.error('Send message exception:', err);
-      }
-    } else {
-      // Demo mode: mark as delivered
-      setTimeout(() => {
-        setMessages((prev) => ({
-          ...prev,
-          [conversationId]: (prev[conversationId] || []).map((m) =>
-            m.id === tempId ? { ...m, status: 'delivered' } : m
-          ),
-        }));
-      }, 300);
-    }
   };
 
   const markStoryAsRead = (storyId: string) => {

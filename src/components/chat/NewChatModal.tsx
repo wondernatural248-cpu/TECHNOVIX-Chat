@@ -87,7 +87,7 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({ isOpen, onClose }) =
                   </Badge>
                 ) : (
                   <Badge variant="violet" size="xs">
-                    Demo Mode
+                    Supabase Offline
                   </Badge>
                 )}
               </h2>

@@ -35,30 +35,38 @@ export const EmptyChatState: React.FC = () => {
           <Badge variant="violet" size="xs">
             <Cpu className="w-3 h-3" /> Sub-15ms Edge
           </Badge>
-          <Badge variant="demo" size="xs">
-            <Sparkles className="w-3 h-3" /> UI Preview
+          <Badge variant="emerald" size="xs">
+            <Sparkles className="w-3 h-3" /> Supabase Realtime
           </Badge>
         </div>
 
-        {/* Suggested chats to open */}
-        <div className="space-y-2 text-left">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block px-1">
-            Quick Launch Channels
-          </span>
-          {conversations.slice(0, 3).map((conv) => (
-            <button
-              key={conv.id}
-              onClick={() => setActiveConversationId(conv.id)}
-              className="w-full flex items-center justify-between p-2.5 rounded-xl bg-technovix-surface/60 hover:bg-technovix-card border border-white/5 hover:border-neon-cyan/30 text-xs text-slate-200 hover:text-white transition-all group"
-            >
-              <div className="flex items-center gap-2 truncate">
-                <MessageSquare className="w-3.5 h-3.5 text-neon-cyan group-hover:scale-110 transition-transform" />
-                <span className="truncate">{conv.title}</span>
-              </div>
-              <span className="text-[10px] text-slate-400 font-mono">Open →</span>
-            </button>
-          ))}
-        </div>
+        {/* Suggested chats to open or prompt to create */}
+        {conversations.length > 0 ? (
+          <div className="space-y-2 text-left">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block px-1">
+              Active Conversations
+            </span>
+            {conversations.slice(0, 3).map((conv) => (
+              <button
+                key={conv.id}
+                onClick={() => setActiveConversationId(conv.id)}
+                className="w-full flex items-center justify-between p-2.5 rounded-xl bg-technovix-surface/60 hover:bg-technovix-card border border-white/5 hover:border-neon-cyan/30 text-xs text-slate-200 hover:text-white transition-all group"
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <MessageSquare className="w-3.5 h-3.5 text-neon-cyan group-hover:scale-110 transition-transform" />
+                  <span className="truncate">{conv.title}</span>
+                </div>
+                <span className="text-[10px] text-slate-400 font-mono">Open →</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="p-4 rounded-2xl bg-technovix-surface/40 border border-white/5 space-y-2">
+            <p className="text-xs text-slate-400">
+              No conversations yet. Connect with other users on the network to start messaging.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

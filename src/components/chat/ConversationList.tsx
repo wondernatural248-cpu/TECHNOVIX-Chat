@@ -59,8 +59,9 @@ export const ConversationList: React.FC = () => {
                 Live Sync
               </span>
             ) : (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono text-neon-violet-light bg-neon-violet/15 border border-neon-violet/30">
-                Preview
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono text-amber-400 bg-amber-500/15 border border-amber-500/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                Disconnected
               </span>
             )}
           </div>

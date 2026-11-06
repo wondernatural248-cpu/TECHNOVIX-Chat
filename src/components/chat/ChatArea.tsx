@@ -145,8 +145,9 @@ export const ChatArea: React.FC = () => {
             Supabase Realtime Live
           </span>
         ) : (
-          <span className="text-neon-violet-light font-mono text-[10px]">
-            Preview Mode
+          <span className="text-amber-400 font-mono text-[10px] flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            Supabase Disconnected
           </span>
         )}
       </div>

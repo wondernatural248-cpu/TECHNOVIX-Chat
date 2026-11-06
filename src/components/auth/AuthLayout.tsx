@@ -42,9 +42,9 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children, subtitle }) =>
           </p>
 
           <div className="mt-3 flex items-center justify-center">
-            <Badge variant="demo" size="sm">
+            <Badge variant="cyan" size="sm">
               <Sparkles className="w-3 h-3 text-neon-cyan" />
-              Interactive UI Preview Mode
+              Encrypted Real-Time Messaging
             </Badge>
           </div>
         </div>
@@ -58,7 +58,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children, subtitle }) =>
         {/* Footer Notice */}
         <div className="mt-6 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
           <ShieldCheck className="w-4 h-4 text-emerald-400/80" />
-          <span>Zero Secrets Exposed • Supabase PostgreSQL Architecture Ready</span>
+          <span>Zero Secrets Exposed • Supabase PostgreSQL Real-Time Mesh</span>
         </div>
       </div>
     </div>

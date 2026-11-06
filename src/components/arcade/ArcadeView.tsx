@@ -33,7 +33,7 @@ export const ArcadeView: React.FC = () => {
             </div>
           </div>
 
-          <Badge variant="demo" size="xs" className="hidden md:inline-flex">
+          <Badge variant="violet" size="xs" className="hidden md:inline-flex">
             <Flame className="w-3 h-3 text-neon-magenta" />
             CYBER DRIFT 3D
           </Badge>

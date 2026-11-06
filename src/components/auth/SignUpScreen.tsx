@@ -23,7 +23,7 @@ const AVATAR_PRESETS = [
 ];
 
 export const SignUpScreen: React.FC = () => {
-  const { setActiveScreen, setCurrentUser, signUpWithEmail, isSupabaseConfigured } = useApp();
+  const { setActiveScreen, signUpWithEmail, isSupabaseConfigured } = useApp();
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -39,6 +39,11 @@ export const SignUpScreen: React.FC = () => {
     setErrorMessage(null);
     setSuccessInfo(null);
 
+    if (!isSupabaseConfigured) {
+      setErrorMessage('Supabase backend is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env.local file.');
+      return;
+    }
+
     if (!acceptedTerms) {
       setErrorMessage('Please accept the protocol agreement to proceed.');
       return;
@@ -49,37 +54,19 @@ export const SignUpScreen: React.FC = () => {
       return;
     }
 
-    if (isSupabaseConfigured) {
-      setIsLoading(true);
-      const res = await signUpWithEmail(email, password, displayName, username, selectedAvatar);
-      setIsLoading(false);
+    setIsLoading(true);
+    const res = await signUpWithEmail(email, password, displayName, username, selectedAvatar);
+    setIsLoading(false);
 
-      if (res.error) {
-        setErrorMessage(res.error);
-        return;
-      }
+    if (res.error) {
+      setErrorMessage(res.error);
+      return;
+    }
 
-      if (res.needsEmailConfirmation) {
-        setSuccessInfo(
-          'Account created! Verification link sent to your email. (Note: You can turn off "Confirm email" in Supabase Auth Settings to sign in without email confirmation).'
-        );
-      }
-    } else {
-      // Demo preview mode
-      setIsLoading(true);
-      setTimeout(() => {
-        setIsLoading(false);
-        if (displayName.trim()) {
-          setCurrentUser((prev) => ({
-            ...prev,
-            displayName: displayName.trim(),
-            username: username.trim() || displayName.toLowerCase().replace(/\s+/g, '.'),
-            email: email.trim() || prev.email,
-            avatar: selectedAvatar,
-          }));
-        }
-        setActiveScreen('app');
-      }, 500);
+    if (res.needsEmailConfirmation) {
+      setSuccessInfo(
+        'Account created! Verification link sent to your email. (Note: You can turn off "Confirm email" in Supabase Auth Settings to sign in without email confirmation).'
+      );
     }
   };
 
