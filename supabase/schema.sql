@@ -39,13 +39,13 @@ CREATE TABLE IF NOT EXISTS public.conversations (
     type TEXT NOT NULL DEFAULT 'direct' CHECK (type IN ('direct', 'group', 'channel')),
     avatar_url TEXT,
     created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-    direct_key TEXT, -- Unique deterministic token for 1-on-1 chats: 'min_uuid:max_uuid'
+    direct_key TEXT UNIQUE, -- Unique deterministic token for 1-on-1 chats: 'min_uuid:max_uuid'
     last_message_at TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Ensure direct_key column exists if table was created in an earlier migration
+-- Ensure direct_key column and full UNIQUE constraint exist
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -54,12 +54,29 @@ BEGIN
   ) THEN
     ALTER TABLE public.conversations ADD COLUMN direct_key TEXT;
   END IF;
-END $$;
 
--- Enforce strict uniqueness for direct 1-on-1 conversation pairs (prevents concurrent duplicates)
-CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_direct_key 
-    ON public.conversations(direct_key) 
-    WHERE direct_key IS NOT NULL;
+  -- Drop legacy partial index (partial index with WHERE clause cannot be used as arbiter for ON CONFLICT (direct_key))
+  DROP INDEX IF EXISTS public.idx_conversations_direct_key;
+
+  -- Clean up any duplicates if any exist from concurrent inserts before constraint
+  DELETE FROM public.conversations c1
+  WHERE c1.direct_key IS NOT NULL
+    AND c1.created_at < (
+      SELECT MAX(c2.created_at)
+      FROM public.conversations c2
+      WHERE c2.direct_key = c1.direct_key
+    );
+
+  -- Ensure an explicit, full UNIQUE constraint exists on conversations(direct_key)
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint 
+    WHERE conrelid = 'public.conversations'::regclass 
+      AND (conname = 'conversations_direct_key_unique' OR conname = 'conversations_direct_key_key')
+  ) THEN
+    ALTER TABLE public.conversations 
+      ADD CONSTRAINT conversations_direct_key_unique UNIQUE (direct_key);
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_conversations_last_msg 
     ON public.conversations(last_message_at DESC);
@@ -75,6 +92,40 @@ CREATE TABLE IF NOT EXISTS public.conversation_participants (
     joined_at TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (conversation_id, profile_id)
 );
+
+-- Ensure conversation_participants has an explicit unique constraint on (conversation_id, profile_id)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint 
+    WHERE conrelid = 'public.conversation_participants'::regclass 
+      AND contype IN ('p', 'u')
+      AND array_to_string(conkey, ',') = (
+        SELECT array_to_string(array_agg(attnum ORDER BY attnum), ',')
+        FROM pg_attribute 
+        WHERE attrelid = 'public.conversation_participants'::regclass 
+          AND attname IN ('conversation_id', 'profile_id')
+      )
+  ) AND NOT EXISTS (
+    SELECT 1 FROM pg_indexes 
+    WHERE schemaname = 'public' 
+      AND tablename = 'conversation_participants' 
+      AND indexdef ILIKE '%(conversation_id, profile_id)%'
+      AND indexdef ILIKE '%UNIQUE%'
+  ) THEN
+    -- Deduplicate if any duplicate participants exist
+    DELETE FROM public.conversation_participants cp1
+    WHERE cp1.ctid < (
+      SELECT MAX(cp2.ctid)
+      FROM public.conversation_participants cp2
+      WHERE cp2.conversation_id = cp1.conversation_id
+        AND cp2.profile_id = cp1.profile_id
+    );
+
+    ALTER TABLE public.conversation_participants 
+      ADD CONSTRAINT conversation_participants_conv_profile_unique UNIQUE (conversation_id, profile_id);
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_conv_participants_profile 
     ON public.conversation_participants(profile_id);
@@ -268,6 +319,29 @@ BEGIN
   LIMIT 1;
 
   IF existing_conv_id IS NOT NULL THEN
+    -- Ensure both participants are present in conversation_participants
+    BEGIN
+      INSERT INTO public.conversation_participants (conversation_id, profile_id, role)
+      VALUES 
+        (existing_conv_id, current_user_id, 'owner'),
+        (existing_conv_id, other_user_id, 'member')
+      ON CONFLICT (conversation_id, profile_id) DO NOTHING;
+    EXCEPTION WHEN invalid_column_reference OR undefined_column OR unique_violation THEN
+      INSERT INTO public.conversation_participants (conversation_id, profile_id, role)
+      SELECT existing_conv_id, current_user_id, 'owner'
+      WHERE NOT EXISTS (
+        SELECT 1 FROM public.conversation_participants 
+        WHERE conversation_id = existing_conv_id AND profile_id = current_user_id
+      );
+
+      INSERT INTO public.conversation_participants (conversation_id, profile_id, role)
+      SELECT existing_conv_id, other_user_id, 'member'
+      WHERE NOT EXISTS (
+        SELECT 1 FROM public.conversation_participants 
+        WHERE conversation_id = existing_conv_id AND profile_id = other_user_id
+      );
+    END;
+
     RETURN existing_conv_id;
   END IF;
 
@@ -285,14 +359,51 @@ BEGIN
     SET direct_key = d_key
     WHERE id = existing_conv_id AND direct_key IS NULL;
 
+    -- Ensure both participants are present in conversation_participants
+    BEGIN
+      INSERT INTO public.conversation_participants (conversation_id, profile_id, role)
+      VALUES 
+        (existing_conv_id, current_user_id, 'owner'),
+        (existing_conv_id, other_user_id, 'member')
+      ON CONFLICT (conversation_id, profile_id) DO NOTHING;
+    EXCEPTION WHEN invalid_column_reference OR undefined_column OR unique_violation THEN
+      INSERT INTO public.conversation_participants (conversation_id, profile_id, role)
+      SELECT existing_conv_id, current_user_id, 'owner'
+      WHERE NOT EXISTS (
+        SELECT 1 FROM public.conversation_participants 
+        WHERE conversation_id = existing_conv_id AND profile_id = current_user_id
+      );
+
+      INSERT INTO public.conversation_participants (conversation_id, profile_id, role)
+      SELECT existing_conv_id, other_user_id, 'member'
+      WHERE NOT EXISTS (
+        SELECT 1 FROM public.conversation_participants 
+        WHERE conversation_id = existing_conv_id AND profile_id = other_user_id
+      );
+    END;
+
     RETURN existing_conv_id;
   END IF;
 
   -- 4. Create new direct conversation with direct_key
-  INSERT INTO public.conversations (type, created_by, direct_key)
-  VALUES ('direct', current_user_id, d_key)
-  ON CONFLICT (direct_key) DO NOTHING
-  RETURNING id INTO new_conv_id;
+  -- Uses the unique constraint conversations_direct_key_unique
+  BEGIN
+    INSERT INTO public.conversations (type, created_by, direct_key)
+    VALUES ('direct', current_user_id, d_key)
+    ON CONFLICT (direct_key) DO NOTHING
+    RETURNING id INTO new_conv_id;
+  EXCEPTION WHEN invalid_column_reference OR undefined_column OR unique_violation THEN
+    SELECT id INTO new_conv_id
+    FROM public.conversations
+    WHERE direct_key = d_key
+    LIMIT 1;
+
+    IF new_conv_id IS NULL THEN
+      INSERT INTO public.conversations (type, created_by, direct_key)
+      VALUES ('direct', current_user_id, d_key)
+      RETURNING id INTO new_conv_id;
+    END IF;
+  END;
 
   -- If concurrent insert succeeded right before us, fetch it
   IF new_conv_id IS NULL THEN
@@ -300,16 +411,34 @@ BEGIN
     FROM public.conversations
     WHERE direct_key = d_key
     LIMIT 1;
+  END IF;
 
-    RETURN new_conv_id;
+  IF new_conv_id IS NULL THEN
+    RAISE EXCEPTION 'Could not create or find direct conversation';
   END IF;
 
   -- 5. Insert both participants atomically
-  INSERT INTO public.conversation_participants (conversation_id, profile_id, role)
-  VALUES 
-    (new_conv_id, current_user_id, 'owner'),
-    (new_conv_id, other_user_id, 'member')
-  ON CONFLICT (conversation_id, profile_id) DO NOTHING;
+  BEGIN
+    INSERT INTO public.conversation_participants (conversation_id, profile_id, role)
+    VALUES 
+      (new_conv_id, current_user_id, 'owner'),
+      (new_conv_id, other_user_id, 'member')
+    ON CONFLICT (conversation_id, profile_id) DO NOTHING;
+  EXCEPTION WHEN invalid_column_reference OR undefined_column OR unique_violation THEN
+    INSERT INTO public.conversation_participants (conversation_id, profile_id, role)
+    SELECT new_conv_id, current_user_id, 'owner'
+    WHERE NOT EXISTS (
+      SELECT 1 FROM public.conversation_participants 
+      WHERE conversation_id = new_conv_id AND profile_id = current_user_id
+    );
+
+    INSERT INTO public.conversation_participants (conversation_id, profile_id, role)
+    SELECT new_conv_id, other_user_id, 'member'
+    WHERE NOT EXISTS (
+      SELECT 1 FROM public.conversation_participants 
+      WHERE conversation_id = new_conv_id AND profile_id = other_user_id
+    );
+  END;
 
   RETURN new_conv_id;
 END;

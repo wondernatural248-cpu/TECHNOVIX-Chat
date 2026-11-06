@@ -338,6 +338,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             displayAvatar = displayAvatar || DEFAULT_AVATAR;
           }
 
+          const convMembers: UserProfile[] = convParts.map((cp) => ({
+            id: cp.profile_id,
+            username: cp.profiles?.username || '',
+            displayName: cp.profiles?.full_name || cp.profiles?.username || 'Operative',
+            avatar: cp.profiles?.avatar_url || DEFAULT_AVATAR,
+            bio: cp.profiles?.bio || '',
+            status: (cp.profiles?.status_indicator as UserProfile['status']) || 'offline',
+          }));
+
           return {
             id: convId,
             title: displayTitle || 'Encrypted Channel',
@@ -349,6 +358,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             isOnline,
             statusText,
             memberCount: convParts.length,
+            members: convMembers,
           };
         })
         .filter((c): c is Conversation => c !== null);
@@ -777,13 +787,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         throw new Error('Authentication required to start a conversation.');
       }
 
-      // Call atomic RPC get_or_create_direct_conversation
+      // Check if conversation already exists in active local state
+      const existingConv = conversations.find(
+        (c) => c.type === 'direct' && c.members?.some((m) => m.id === otherUserId)
+      );
+
+      // Call atomic RPC get_or_create_direct_conversation to guarantee database record exists
       const { data: convId, error } = await (supabase.rpc as any)(
         'get_or_create_direct_conversation',
         { other_user_id: otherUserId }
       );
 
       if (error || !convId) {
+        if (existingConv) {
+          setActiveConversationId(existingConv.id);
+          setMobileShowChat(true);
+          return existingConv.id;
+        }
         console.error('Failed to get/create direct conversation in Supabase:', error);
         throw new Error(error?.message || 'Could not start conversation in Supabase');
       }
@@ -799,7 +819,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return cleanConvId;
     },
-    [refreshConversations]
+    [conversations, refreshConversations]
   );
 
   // ----------------------------------------------------------------------------
