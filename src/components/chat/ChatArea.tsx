@@ -20,6 +20,7 @@ import { MessageComposer } from './MessageComposer';
 export const ChatArea: React.FC = () => {
   const {
     activeConversationId,
+    setActiveConversationId,
     conversations,
     messages,
     setMobileShowChat,
@@ -31,6 +32,23 @@ export const ChatArea: React.FC = () => {
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
   const currentMessages = activeConversationId ? messages[activeConversationId] || [] : [];
+
+  // Handle ESC key to return to dashboard
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input/textarea
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+        return;
+      }
+      if (e.key === 'Escape') {
+        setActiveConversationId(null);
+        setMobileShowChat(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [setActiveConversationId, setMobileShowChat]);
 
   // Auto scroll to bottom when messages change or conversation changes
   useEffect(() => {
@@ -48,13 +66,17 @@ export const ChatArea: React.FC = () => {
       {/* Active Conversation Top Bar */}
       <div className="h-16 px-4 border-b border-white/10 bg-technovix-void/75 backdrop-blur-xl flex items-center justify-between shrink-0 select-none z-10">
         <div className="flex items-center gap-3">
-          {/* Mobile Back Button */}
+          {/* Universal Back to Dashboard Button (Desktop & Mobile) */}
           <button
-            onClick={() => setMobileShowChat(false)}
-            className="md:hidden p-1.5 -ml-1 rounded-xl text-slate-400 hover:text-white hover:bg-white/5"
-            title="Back to conversation list"
+            onClick={() => {
+              setActiveConversationId(null);
+              setMobileShowChat(false);
+            }}
+            className="p-2 -ml-1 rounded-xl text-slate-400 hover:text-neon-cyan hover:bg-white/5 active:scale-95 transition-all cursor-pointer group shrink-0 flex items-center justify-center"
+            title="Return to Dashboard (Esc)"
+            aria-label="Return to Dashboard"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform" />
           </button>
 
           {/* Contact / Channel Avatar */}

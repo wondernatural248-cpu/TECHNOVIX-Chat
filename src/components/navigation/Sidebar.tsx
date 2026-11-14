@@ -6,10 +6,10 @@ import {
   Radio,
   Settings,
   ShieldAlert,
-  Terminal,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Avatar } from '../common/Avatar';
+import { TechnovixLogo } from '../common/TechnovixLogo';
 
 export const Sidebar: React.FC = () => {
   const {
@@ -20,6 +20,8 @@ export const Sidebar: React.FC = () => {
     activeFilter,
     setActiveFilter,
     setActiveStoryId,
+    setActiveConversationId,
+    setMobileShowChat,
     stories,
     conversations,
   } = useApp();
@@ -35,13 +37,16 @@ export const Sidebar: React.FC = () => {
       {/* Brand Icon */}
       <div className="flex flex-col items-center gap-6">
         <button
-          onClick={() => setActiveFilter('all')}
-          title="TECHNOVIX Chat Home"
-          className="group relative flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-tr from-neon-violet to-neon-cyan p-[2px] shadow-glow-cyan-sm transition-transform hover:scale-105 active:scale-95"
+          onClick={() => {
+            setActiveView('chat');
+            setActiveFilter('all');
+            setActiveConversationId(null);
+            setMobileShowChat(false);
+          }}
+          title="TECHNOVIX Chat Dashboard"
+          className="group relative flex items-center justify-center rounded-2xl transition-transform hover:scale-105 active:scale-95"
         >
-          <div className="w-full h-full bg-technovix-panel rounded-[14px] flex items-center justify-center">
-            <Terminal className="w-6 h-6 text-neon-cyan group-hover:text-white transition-colors" />
-          </div>
+          <TechnovixLogo size="md" />
           <span className="absolute -bottom-1 -right-1 w-3 h-3 bg-neon-cyan rounded-full border-2 border-technovix-void" />
         </button>
 

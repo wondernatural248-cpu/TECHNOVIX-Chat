@@ -1,7 +1,8 @@
 import React from 'react';
-import { Cpu, Lock, MessageSquare, Sparkles, Terminal } from 'lucide-react';
+import { Cpu, Lock, MessageSquare, Sparkles } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Badge } from '../common/Badge';
+import { TechnovixLogo } from '../common/TechnovixLogo';
 
 export const EmptyChatState: React.FC = () => {
   const { conversations, setActiveConversationId } = useApp();
@@ -14,18 +15,14 @@ export const EmptyChatState: React.FC = () => {
 
       {/* Futuristic Center Card */}
       <div className="relative z-10 max-w-md w-full glass-panel rounded-3xl p-8 border border-white/10 shadow-glass">
-        {/* Hologram icon */}
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-neon-violet via-purple-600 to-neon-cyan p-[2px] shadow-glow-cyan-sm mb-4">
-          <div className="w-full h-full bg-technovix-panel rounded-[14px] flex items-center justify-center">
-            <Terminal className="w-8 h-8 text-neon-cyan animate-pulse-subtle" />
-          </div>
-        </div>
+        {/* Official Brand Logo */}
+        <TechnovixLogo size="xl" className="mb-4" />
 
         <h3 className="text-xl font-bold text-white mb-1">
-          TECHNOVIX Quantum Terminal
+          TECHNOVIX Chat Dashboard
         </h3>
         <p className="text-xs text-slate-400 mb-4">
-          Select a channel or direct identity from the sidebar to establish a secure encrypted stream.
+          Select a conversation from the dashboard list to view messages and transmit encrypted communications.
         </p>
 
         <div className="flex items-center justify-center gap-2 mb-6">

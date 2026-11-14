@@ -1,7 +1,8 @@
 import React from 'react';
-import { Database, LogOut, Terminal, User } from 'lucide-react';
+import { Database, LogOut, User } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Badge } from '../common/Badge';
+import { TechnovixLogo } from '../common/TechnovixLogo';
 
 export const AppHeader: React.FC = () => {
   const { signOut, setIsProfileOpen, activeView, isSupabaseActive } = useApp();
@@ -10,11 +11,7 @@ export const AppHeader: React.FC = () => {
     <header className="h-14 border-b border-white/10 bg-technovix-void/80 px-4 flex items-center justify-between shrink-0 select-none backdrop-blur-xl z-10">
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-neon-violet to-neon-cyan p-[1.5px] flex items-center justify-center shadow-glow-cyan-sm">
-            <div className="w-full h-full bg-technovix-panel rounded-[6.5px] flex items-center justify-center">
-              <Terminal className="w-4 h-4 text-neon-cyan" />
-            </div>
-          </div>
+          <TechnovixLogo size="sm" />
           <div className="flex items-center gap-1.5">
             <span className="font-extrabold tracking-tight text-white text-base">
               TECHNOVIX

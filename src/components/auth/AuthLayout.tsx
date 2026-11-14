@@ -1,6 +1,7 @@
 import React from 'react';
-import { ShieldCheck, Sparkles, Terminal } from 'lucide-react';
+import { ShieldCheck, Sparkles } from 'lucide-react';
 import { Badge } from '../common/Badge';
+import { TechnovixLogo } from '../common/TechnovixLogo';
 
 interface AuthLayoutProps {
   children: React.ReactNode;
@@ -22,11 +23,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children, subtitle }) =>
       <div className="relative z-10 w-full max-w-md sm:max-w-lg">
         {/* Brand Header */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-neon-violet via-purple-600 to-neon-cyan p-[2px] shadow-glow-violet-sm mb-3">
-            <div className="w-full h-full bg-technovix-panel rounded-[14px] flex items-center justify-center">
-              <Terminal className="w-7 h-7 text-neon-cyan" />
-            </div>
-          </div>
+          <TechnovixLogo size="lg" className="mb-3" />
 
           <div className="flex items-center justify-center gap-2 mb-1">
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">

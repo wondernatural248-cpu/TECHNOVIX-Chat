@@ -46,6 +46,8 @@ export interface Message {
     senderName: string;
     text: string;
   };
+  isEdited?: boolean;
+  deletedAt?: string | null;
 }
 
 export interface Conversation {
@@ -55,6 +57,7 @@ export interface Conversation {
   type: 'direct' | 'group' | 'channel';
   lastMessage: string;
   lastMessageTime: string;
+  lastActivityTimestamp?: number;
   unreadCount: number;
   isOnline?: boolean;
   isTyping?: boolean;

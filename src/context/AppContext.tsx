@@ -87,6 +87,8 @@ interface AppContextType {
   conversations: Conversation[];
   messages: Record<string, Message[]>;
   sendMessage: (conversationId: string, content: string, attachments?: Attachment[]) => Promise<void>;
+  editMessage: (messageId: string, newContent: string) => Promise<void>;
+  deleteMessage: (messageId: string) => Promise<void>;
   activeStoryId: string | null;
   setActiveStoryId: (id: string | null) => void;
   isProfileOpen: boolean;
@@ -154,6 +156,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const currentUserIdRef = useRef<string | null>(supabaseUser?.id || null);
   currentUserIdRef.current = supabaseUser?.id || null;
+
+  const activeConversationIdRef = useRef<string | null>(activeConversationId);
+  activeConversationIdRef.current = activeConversationId;
 
   // ----------------------------------------------------------------------------
   // Helper: Fetch Profile for user from Supabase PostgreSQL
@@ -347,6 +352,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             status: (cp.profiles?.status_indicator as UserProfile['status']) || 'offline',
           }));
 
+          const activityTimestamp = lastMsgObj
+            ? new Date(lastMsgObj.created_at).getTime()
+            : new Date(rawConv.last_message_at || rawConv.created_at).getTime();
+
+          const lastReadTimestamp = p.last_read_at ? new Date(p.last_read_at).getTime() : 0;
+          const unreadCount = latestMsgs.filter(
+            (m) =>
+              m.conversation_id === convId &&
+              m.sender_id !== uid &&
+              new Date(m.created_at).getTime() > lastReadTimestamp
+          ).length;
+
           return {
             id: convId,
             title: displayTitle || 'Encrypted Channel',
@@ -354,7 +371,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             type: rawConv.type,
             lastMessage: lastMsgObj ? lastMsgObj.content : 'Channel established',
             lastMessageTime: lastMsgObj ? formatRelativeTime(lastMsgObj.created_at) : formatRelativeTime(rawConv.created_at),
-            unreadCount: 0,
+            lastActivityTimestamp: activityTimestamp,
+            unreadCount,
             isOnline,
             statusText,
             memberCount: convParts.length,
@@ -362,6 +380,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
         })
         .filter((c): c is Conversation => c !== null);
+
+      // Sort conversations by latest activity (WhatsApp style)
+      mapped.sort((a, b) => (b.lastActivityTimestamp || 0) - (a.lastActivityTimestamp || 0));
 
       setConversations(mapped);
     } catch (err) {
@@ -385,6 +406,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           content,
           message_type,
           attachments,
+          is_edited,
+          deleted_at,
           created_at,
           profiles (
             id,
@@ -410,6 +433,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         content: string;
         message_type: string;
         attachments: unknown;
+        is_edited?: boolean;
+        deleted_at?: string | null;
         created_at: string;
         profiles: {
           id: string;
@@ -429,6 +454,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const senderProfile = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles;
         const senderName = isOut ? 'You' : senderProfile?.full_name || senderProfile?.username || 'Peer';
         const senderAvatar = senderProfile?.avatar_url || DEFAULT_AVATAR;
+        const isDeleted = Boolean(m.deleted_at);
 
         return {
           id: m.id,
@@ -436,11 +462,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           senderId: m.sender_id,
           senderName,
           senderAvatar,
-          content: m.content,
+          content: isDeleted ? 'This message was deleted' : m.content,
           timestamp: formatMessageTime(m.created_at),
           status: 'delivered',
           isOutgoing: isOut,
-          attachments: (m.attachments as unknown as Attachment[]) || [],
+          attachments: isDeleted ? [] : ((m.attachments as unknown as Attachment[]) || []),
+          isEdited: Boolean(m.is_edited),
+          deletedAt: m.deleted_at || null,
         };
       });
 
@@ -486,12 +514,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             content: string;
             message_type: string;
             attachments: unknown;
+            is_edited?: boolean;
+            deleted_at?: string | null;
             created_at: string;
           };
 
           const convId = newRow.conversation_id;
           const uid = currentUserIdRef.current;
           const isOut = newRow.sender_id === uid;
+          const isDeleted = Boolean(newRow.deleted_at);
 
           let senderName = isOut ? 'You' : 'Peer';
           let senderAvatar = DEFAULT_AVATAR;
@@ -514,11 +545,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             senderId: newRow.sender_id,
             senderName,
             senderAvatar,
-            content: newRow.content,
+            content: isDeleted ? 'This message was deleted' : newRow.content,
             timestamp: formatMessageTime(newRow.created_at),
             status: 'delivered',
             isOutgoing: isOut,
-            attachments: (newRow.attachments as unknown as Attachment[]) || [],
+            attachments: isDeleted ? [] : ((newRow.attachments as unknown as Attachment[]) || []),
+            isEdited: Boolean(newRow.is_edited),
+            deletedAt: newRow.deleted_at || null,
           };
 
           // Append to message feed if not already present
@@ -533,22 +566,100 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             };
           });
 
-          // Update conversation lastMessage & lastMessageTime
+          // Move conversation to top of dashboard list with updated preview (WhatsApp style)
           setConversations((prev) => {
-            const exists = prev.some((c) => c.id === convId);
-            if (!exists) {
+            const target = prev.find((c) => c.id === convId);
+            const remaining = prev.filter((c) => c.id !== convId);
+            if (!target) {
               refreshConversations();
               return prev;
             }
-            return prev.map((c) =>
+
+            const isCurrentlyOpen = activeConversationIdRef.current === convId;
+            const isIncoming = newRow.sender_id !== uid;
+            const newUnread = isIncoming && !isCurrentlyOpen ? (target.unreadCount || 0) + 1 : 0;
+
+            const updated: Conversation = {
+              ...target,
+              lastMessage: isDeleted ? 'This message was deleted' : newRow.content,
+              lastMessageTime: 'Just now',
+              lastActivityTimestamp: Date.now(),
+              unreadCount: newUnread,
+            };
+            return [updated, ...remaining];
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+        },
+        (payload) => {
+          const updatedRow = payload.new as {
+            id: string;
+            conversation_id: string;
+            content: string;
+            is_edited?: boolean;
+            deleted_at?: string | null;
+            attachments?: unknown;
+          };
+          const convId = updatedRow.conversation_id;
+          const isDeleted = Boolean(updatedRow.deleted_at);
+
+          setMessages((prev) => {
+            const existing = prev[convId] || [];
+            return {
+              ...prev,
+              [convId]: existing.map((m) =>
+                m.id === updatedRow.id
+                  ? {
+                      ...m,
+                      content: isDeleted ? 'This message was deleted' : updatedRow.content,
+                      isEdited: Boolean(updatedRow.is_edited),
+                      deletedAt: updatedRow.deleted_at || null,
+                      attachments: isDeleted
+                        ? []
+                        : ((updatedRow.attachments as unknown as Attachment[]) || m.attachments || []),
+                    }
+                  : m
+              ),
+            };
+          });
+
+          // Update conversation preview if the message was updated
+          setConversations((prev) =>
+            prev.map((c) =>
               c.id === convId
                 ? {
                     ...c,
-                    lastMessage: newRow.content,
-                    lastMessageTime: 'Just now',
+                    lastMessage: isDeleted ? 'This message was deleted' : updatedRow.content,
                   }
                 : c
-            );
+            )
+          );
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages',
+        },
+        (payload) => {
+          const oldRow = payload.old as { id?: string; conversation_id?: string };
+          if (!oldRow?.id) return;
+          const msgId = oldRow.id;
+
+          setMessages((prev) => {
+            const next = { ...prev };
+            for (const cId in next) {
+              next[cId] = next[cId].filter((m) => m.id !== msgId);
+            }
+            return next;
           });
         }
       )
@@ -897,14 +1008,122 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
 
-    // Update conversation lastMessage & lastMessageTime
+    // Update conversation preview and move to top of dashboard list (WhatsApp style)
+    setConversations((prev) => {
+      const target = prev.find((c) => c.id === conversationId);
+      const remaining = prev.filter((c) => c.id !== conversationId);
+      if (!target) return prev;
+      const updated: Conversation = {
+        ...target,
+        lastMessage: trimmedContent || 'Sent an attachment',
+        lastMessageTime: 'Just now',
+        lastActivityTimestamp: Date.now(),
+      };
+      return [updated, ...remaining];
+    });
+  };
+
+  const editMessage = async (messageId: string, newContent: string) => {
+    const uid = currentUserIdRef.current;
+    if (!supabase || !uid) {
+      throw new Error('Authentication required to edit messages.');
+    }
+
+    const trimmed = newContent.trim();
+    if (!trimmed) {
+      throw new Error('Message content cannot be empty.');
+    }
+
+    const { data, error } = await (supabase.from('messages') as any)
+      .update({
+        content: trimmed,
+        is_edited: true,
+      })
+      .eq('id', messageId)
+      .eq('sender_id', uid)
+      .select('id, conversation_id, content, is_edited, deleted_at')
+      .single();
+
+    if (error || !data) {
+      console.error('Error editing message in Supabase:', error);
+      throw new Error(error?.message || 'Failed to edit message in database.');
+    }
+
+    const convId = data.conversation_id;
+
+    // Update in local state immediately
+    setMessages((prev) => {
+      const existing = prev[convId] || [];
+      return {
+        ...prev,
+        [convId]: existing.map((m) =>
+          m.id === messageId ? { ...m, content: trimmed, isEdited: true } : m
+        ),
+      };
+    });
+
+    // Update conversation preview if needed
     setConversations((prev) =>
       prev.map((c) =>
-        c.id === conversationId
+        c.id === convId
           ? {
               ...c,
-              lastMessage: trimmedContent || 'Sent an attachment',
-              lastMessageTime: 'Just now',
+              lastMessage: trimmed,
+            }
+          : c
+      )
+    );
+  };
+
+  const deleteMessage = async (messageId: string) => {
+    const uid = currentUserIdRef.current;
+    if (!supabase || !uid) {
+      throw new Error('Authentication required to delete messages.');
+    }
+
+    const nowIso = new Date().toISOString();
+    const { data, error } = await (supabase.from('messages') as any)
+      .update({
+        deleted_at: nowIso,
+        content: 'This message was deleted',
+      })
+      .eq('id', messageId)
+      .eq('sender_id', uid)
+      .select('id, conversation_id, content, is_edited, deleted_at')
+      .single();
+
+    if (error || !data) {
+      console.error('Error deleting message in Supabase:', error);
+      throw new Error(error?.message || 'Failed to delete message in database.');
+    }
+
+    const convId = data.conversation_id;
+
+    // Update in local state immediately
+    setMessages((prev) => {
+      const existing = prev[convId] || [];
+      return {
+        ...prev,
+        [convId]: existing.map((m) =>
+          m.id === messageId
+            ? {
+                ...m,
+                content: 'This message was deleted',
+                deletedAt: nowIso,
+                attachments: [],
+              }
+            : m
+        ),
+      };
+    });
+
+    // Update conversation preview
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === convId
+          ? {
+              ...c,
+              lastMessage: 'This message was deleted',
             }
           : c
       )
@@ -917,15 +1136,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  const handleSelectConversation = (id: string | null) => {
-    setActiveConversationId(id);
-    if (id) {
-      setMobileShowChat(true);
-      setConversations((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c))
-      );
-    }
-  };
+  const handleSelectConversation = useCallback(
+    async (id: string | null) => {
+      setActiveConversationId(id);
+      if (id) {
+        setMobileShowChat(true);
+        // Clear unread count locally immediately
+        setConversations((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c))
+        );
+
+        // Persist last_read_at in Supabase
+        const uid = currentUserIdRef.current;
+        if (supabase && uid) {
+          try {
+            await (supabase.from('conversation_participants') as any)
+              .update({ last_read_at: new Date().toISOString() })
+              .eq('conversation_id', id)
+              .eq('profile_id', uid);
+          } catch (e) {
+            console.warn('Failed to update last_read_at:', e);
+          }
+        }
+      } else {
+        setMobileShowChat(false);
+      }
+    },
+    []
+  );
 
   return (
     <AppContext.Provider
@@ -939,6 +1177,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         conversations,
         messages,
         sendMessage,
+        editMessage,
+        deleteMessage,
         activeStoryId,
         setActiveStoryId,
         isProfileOpen,
